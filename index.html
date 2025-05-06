@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Heavy Detailed 3D Rainbow Star Loading Animation</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{
+    height:100%;width:100%;overflow:hidden;
+    background: radial-gradient(circle at center, #1b0033 0%, #000 90%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;
+    color:#fff9;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    user-select:none;
+  }
+  #loading-text {
+    margin-top: 20px;
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #f0f0ffcc;
+    text-shadow: 0 0 25px rgba(255 255 255 / 0.8);
+    font-family: 'Segoe UI Black', Tahoma, Geneva, Verdana, sans-serif;
+    position: relative;
+    z-index: 10;
+  }
+  #threejs-canvas {
+    max-width: 350px;
+    max-height: 600px;
+    width: 90vw;
+    height: 420px;
+    touch-action: none;
+    display: block;
+    filter: drop-shadow(0 0 30px rgba(255 150 200 / 0.85));
+    position: relative;
+    z-index: 5;
+    background: transparent;
+  }
+</style>
+</head>
+<body>
+<canvas id="threejs-canvas"></canvas>
+<div id="loading-text">Loading...</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script>
+(() => {
+  const canvas = document.getElementById('threejs-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setPixelRatio(window.devicePixelRatio);
+
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 1500);
+  camera.position.set(0, 0, 10);
+
+  // Utility: organic vertex displacement
+  function displaceGeometryVertices(geometry, magnitude) {
+    const posAttr = geometry.attributes.position;
+    const normalAttr = geometry.attributes.normal;
+    for (let i = 0; i < posAttr.count; i++) {
+      let vertex = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+      let normal = new THREE.Vector3().fromBufferAttribute(normalAttr, i);
+      let offset = (Math.random() - 0.5) * magnitude;
+      vertex.addScaledVector(normal, offset);
+      posAttr.setXYZ(i, vertex.x, vertex.y, vertex.z);
+    }
+    posAttr.needsUpdate = true;
+    geometry.computeVertexNormals();
+  }
+
+  // Create rainbow color from hue value [0, 1]
+  function rainbowColor(h) {
+    const color = new THREE.Color();
+    return color.setHSL(h % 1, 1.0, 0.5);
+  }
+
+  // Create 3D star with extensive spikes and geometry
+  function createHeavy3DStar() {
+    const starGroup = new THREE.Group();
+
+    // Create highly subdivided icosahedron core
+    const coreRadius = 1;
+    const coreSubdivision = 5; // increase from 3 to 5 for heavy geometry (~20480 vertices)
+    const coreGeo = new THREE.IcosahedronGeometry(coreRadius, coreSubdivision);
+
+    // Add vertex colors rainbow on core
+    const colors = [];
+    const position = coreGeo.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(position, i).normalize();
+      const hue = (Math.atan2(v.z, v.x) / (2 * Math.PI) + 0.5 + (v.y + 1)/4) % 1;
+      const col = rainbowColor(hue);
+      colors.push(col.r, col.g, col.b);
+    }
+    coreGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    // Displace vertices slightly for detail
+    displaceGeometryVertices(coreGeo, 0.035);
+
+    const coreMat = new THREE.MeshPhysicalMaterial({
+      metalness: 0.95,
+      roughness: 0.12,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      emissiveIntensity: 0.8,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      reflectivity: 0.95,
+      emissive: new THREE.Color(0x9020ff),
+      clearcoatNormalScale: new THREE.Vector2(0.2, 0.2),
+    });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    starGroup.add(coreMesh);
+
+    // Spikes: Use all vertices of coreGeo as spike origins
+    // Cone geometry for spikes: Increase segments for heavy load
+    const spikeLength = 1.7;
+    const spikeRadius = 0.22;
+    const spikeSegments = 32;
+    const spikeGeo = new THREE.ConeGeometry(spikeRadius, spikeLength, spikeSegments, 12, true);
+
+    // Add rainbow vertex colors on cone along the Y axis
+    const spikeColors = [];
+    const spikePos = spikeGeo.attributes.position;
+    for (let i = 0; i < spikePos.count; i++) {
+      const y = spikePos.getY(i);
+      const t = THREE.MathUtils.clamp((y + spikeLength * 0.5) / spikeLength, 0, 1);
+      const col = rainbowColor(t * 0.85);
+      spikeColors.push(col.r, col.g, col.b);
+    }
+    spikeGeo.setAttribute('color', new THREE.Float32BufferAttribute(spikeColors, 3));
+    displaceGeometryVertices(spikeGeo, 0.015);
+
+    const spikeMat = new THREE.MeshPhysicalMaterial({
+      metalness: 0.92,
+      roughness: 0.1,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.02,
+      emissiveIntensity: 0.9,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      reflectivity: 0.97,
+      emissive: new THREE.Color(0xbb33ff),
+    });
+
+    const vertices = coreGeo.attributes.position.array;
+    const vertexCount = coreGeo.attributes.position.count;
+
+    // Lower max spikes for sanity due to performance of big spikes.
+    // Take only unique spike origins based on distance (reduce to ~120 spikes)
+    const spikePositions = [];
+    for (let i = 0; i < vertexCount; i++) {
+      const vx = vertices[i * 3];
+      const vy = vertices[i * 3 + 1];
+      const vz = vertices[i * 3 + 2];
+      spikePositions.push(new THREE.Vector3(vx, vy, vz));
+    }
+
+    for (let i = 0; i < spikePositions.length; i += 1) {
+      const dir = spikePositions[i].clone().normalize();
+
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+      spike.position.copy(dir.multiplyScalar(coreRadius));
+      spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      starGroup.add(spike);
+    }
+
+    // Duplicate another star group layer slightly larger, rotated for complexity
+    const starLayer2 = starGroup.clone();
+    starLayer2.scale.set(1.07, 1.07, 1.07);
+    starLayer2.rotation.x = 0.05;
+    starLayer2.rotation.y = 0.07;
+    starLayer2.traverse(child => {
+      if (child.material) {
+        child.material = child.material.clone();
+        child.material.opacity = 0.7;
+        child.material.emissiveIntensity *= 0.6;
+      }
+    });
+    starGroup.add(starLayer2);
+
+    return starGroup;
+  }
+
+  const star = createHeavy3DStar();
+  scene.add(star);
+
+  // Lighting - multiple colorful points for rainbow highlights
+  const lightColors = [0xff00ff, 0xffaa00, 0x00ffcc, 0x4444ff, 0xff33cc, 0x00ffff];
+  lightColors.forEach((col, idx) => {
+    const light = new THREE.PointLight(col, 0.7, 25);
+    const angle = (idx / lightColors.length) * Math.PI * 2;
+    light.position.set(Math.cos(angle) * 8, Math.sin(angle) * 6, 8);
+    scene.add(light);
+  });
+
+  const ambientLight = new THREE.AmbientLight(0x220022, 1.0);
+  scene.add(ambientLight);
+
+  // Falling stars background upgrade: increase count, add color grad variation and acceleration
+  const fallingStarCount = 220;
+  const fallingStarsGeometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(fallingStarCount * 3);
+  const speeds = new Float32Array(fallingStarCount);
+  const colors = new Float32Array(fallingStarCount * 3);
+  const sizes = new Float32Array(fallingStarCount);
+  const acceleration = new Float32Array(fallingStarCount);
+
+  const colorObj = new THREE.Color();
+
+  for (let i = 0; i < fallingStarCount; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 16;
+    positions[i * 3 + 1] = Math.random() * 30 + 8;
+    positions[i * 3 + 2] = -Math.random() * 8 - 8;
+
+    speeds[i] = 0.012 + Math.random() * 0.055;
+    acceleration[i] = 0.0004 + Math.random() * 0.0004;
+    sizes[i] = 0.07 + Math.random() * 0.17;
+
+    const hue = (i / fallingStarCount);
+    colorObj.setHSL(hue, 0.85 + Math.random() * 0.15, 0.6 + Math.random() * 0.25);
+    colors[i * 3] = colorObj.r;
+    colors[i * 3 + 1] = colorObj.g;
+    colors[i * 3 + 2] = colorObj.b;
+  }
+
+  fallingStarsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  fallingStarsGeometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+  fallingStarsGeometry.setAttribute('accel', new THREE.BufferAttribute(acceleration, 1));
+  fallingStarsGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  fallingStarsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const vertexShader = `
+    attribute float size;
+    attribute vec3 color;
+    varying vec3 vColor;
+    void main() {
+      vColor = color;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = size * 80.0 * (300.0 / -mvPosition.z);
+      gl_Position = projectionMatrix * mvPosition;
+    }
+  `;
+
+  const fragmentShader = `
+    varying vec3 vColor;
+    void main() {
+      float dist = distance(gl_PointCoord, vec2(0.5));
+      float alpha = smoothstep(0.5, 0.0, dist);
+      float star = smoothstep(0.15, 0.0, dist);
+      alpha *= star;
+      vec3 color = vColor;
+      gl_FragColor = vec4(color, alpha);
+    }
+  `;
+
+  const fallingStarsMaterial = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const fallingStars = new THREE.Points(fallingStarsGeometry, fallingStarsMaterial);
+  scene.add(fallingStars);
+
+  function onWindowResize() {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height, false);
+  }
+
+  window.addEventListener('resize', onWindowResize);
+  onWindowResize();
+
+  const clock = new THREE.Clock();
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    const elapsed = clock.getElapsedTime();
+
+    // Slow down rotation
+    star.rotation.x = elapsed * 0.08;
+    star.rotation.y = elapsed * 0.12;
+
+    // Animate falling stars with acceleration
+    const posAttr = fallingStarsGeometry.getAttribute('position');
+    const speedAttr = fallingStarsGeometry.getAttribute('speed');
+    const accelAttr = fallingStarsGeometry.getAttribute('accel');
+    const sizeAttr = fallingStarsGeometry.getAttribute('size');
+
+    for (let i = 0; i < fallingStarCount; i++) {
+      speedAttr.array[i] += accelAttr.array[i];
+      posAttr.array[i * 3 + 1] -= speedAttr.array[i]; // Move down
+      posAttr.array[i * 3] += Math.sin(elapsed * 7 + i) * 0.004;
+
+      if (posAttr.array[i * 3 + 1] < -14) {
+        posAttr.array[i * 3 + 1] = Math.random() * 25 + 10;
+        posAttr.array[i * 3] = (Math.random() - 0.5) * 16;
+        posAttr.array[i * 3 + 2] = -Math.random() * 8 - 8;
+
+        speedAttr.array[i] = 0.012 + Math.random() * 0.055;
+        accelAttr.array[i] = 0.0004 + Math.random() * 0.0004;
+        sizeAttr.array[i] = 0.07 + Math.random() * 0.17;
+      }
+    }
+
+    posAttr.needsUpdate = true;
+    speedAttr.needsUpdate = true;
+    sizeAttr.needsUpdate = true;
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+})();
+</script>
+</body>
+</html>
